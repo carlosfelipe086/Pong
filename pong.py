@@ -15,6 +15,10 @@ pygame.display.set_caption('Pong')
 clock = pygame.time.Clock()
 # taxa de frames por segundo
 framerate = 60
+# tempo de execução para cada frame
+frametime = 0
+# contagem de frames
+framecount = 0
 
 # init / estados de jogo
 STATE_MENU = 1 << 0
@@ -46,8 +50,8 @@ def frame_render():
     return
 
 while game_state != STATE_QUIT:
-    # jogo / definir framerate
-    clock.tick(framerate)
+    # jogo / definir framerate, atualizar frametime
+    frametime = clock.tick(framerate)
     #print("framerate: {0} | tempo desde o último frame: {1}ms (estável em {2}ms)".format(int(1/(frametime/1000)), frametime/1000.0, 1.0/framerate))
 
     # background preto
@@ -77,5 +81,6 @@ while game_state != STATE_QUIT:
         pass
 
     pygame.display.update()
+    framecount += 1
 
 pygame.quit()
