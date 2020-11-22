@@ -69,10 +69,10 @@ class Vector2D:
     # overload de operador para soma, multiplicação e divisão
     # compatível com outro vetor, ou com um número inteiro/float    
     def __add__(self, other):
-    if type(other) == Vector2D:
-        return Vector2D(self.x + other.x, self.y + other.y)
-    else:
-        return Vector2D(self.x + other, self.y + other)
+        if type(other) == Vector2D:
+            return Vector2D(self.x + other.x, self.y + other.y)
+        else:
+            return Vector2D(self.x + other, self.y + other)
 
     def __sub__(self, other):
         if type(other) == Vector2D:
@@ -252,6 +252,103 @@ class RetroFont:
     def __init__(self):
         self.letters = {}
         self.initialize_letters()
+
+class Button:
+    def __init__(self, x, y, scale):
+        self.width = 0
+        self.height = 0
+        # size serve para guardar os valores originais de altura e comprimento
+        self.size = Vector2D(self.width, self.height)
+        # scale define o crescimento do botão quando o jogador passa o seu mouse em cima dele
+        self.scale = scale
+        self.origin = Vector2D(x, y)
+
+    def update(self, x, y, scale):
+        self.scale = scale
+        self.origin = Vector2D(x, y)
+        return self
+
+    def create(self, retrofont, wrd):
+        global window
+        
+        self.size = Vector2D(len(wrd) * 25, 50)
+        if abs(self.width - self.size.x) > self.scale:
+            self.width = self.size.x
+            self.height = self.size.y
+
+        cursor_position = pygame.mouse.get_pos()
+        mouse_over = False
+
+        # compensamos pelo frametime, caso a framerate do programa fique abaixo do esperado
+        lerp_factor = 0.1
+        lerp_factor *= 1.0/(frametime/1000) * 1/framerate
+
+        if (cursor_position[0] > self.origin.x - self.width/2 
+        and cursor_position[0] < self.origin.x + self.width/2 
+        and cursor_position[1] > self.origin.y - self.height/2 
+        and cursor_position[1] < self.origin.y + self.height/2):
+            self.width += (self.size.x + self.scale - self.width) * lerp_factor
+            self.height += (self.size.y + self.scale - self.height) * lerp_factor
+            mouse_over = True
+        elif self.width > self.size.x and self.height > self.size.y:
+            self.width += (self.size.x - self.width) * lerp_factor
+            self.height += (self.size.y - self.height) * lerp_factor
+
+        pygame.draw.rect(window, (255, 255, 255), (self.origin.x - self.width/2, self.origin.y - self.height/2, self.width, self.height), 0, 5, 5, 5, 5, 5)
+        retrofont.draw_words(wrd, self.origin.x, self.origin.y, 25, (0, 0, 0))
+
+        # mouse em cima do botão e botão do mouse liberado
+        return mouse_over and mouse_state[2]
+    
+
+class Menu:
+    def __init__(self):
+        # main : menu principal
+        # populate : define humano vs humano, humano vs cpu ou cpu vs cpu
+        # settings : configurações
+        # quit : sai do jogo
+        self.windows = ["main", "populate","settings", "quit"]
+        self.window = 0
+        self.width = 100
+        self.height = 50
+        # 5 botões alocados para serem usandos quando necessário
+        self.buttons = [Button(0, 0, 0), Button(0, 0, 0), Button(0, 0, 0), Button(0, 0, 0), Button(0, 0, 0)]
+
+    def main(self, retrofont):
+        global game_state
+        retrofont.draw_words("PONG", WIDTH/2, HEIGHT/2 - (36 * 7), 72, (255, 255, 255))
+        if self.buttons[0].update(WIDTH/2, HEIGHT/2, 50).create(retrofont, "PLAY"):
+            self.window = self.windows.index("populate")
+
+    def populate(self, retrofont):
+        global game_state, players
+        if self.buttons[0].update(WIDTH/2, 2 * HEIGHT/6, 50).create(retrofont, "Human_vs_Human"):
+            players = [Player(1, False), Player(2, False)]
+            game_state = STATE_ROUND_START
+
+        if self.buttons[1].update(WIDTH/2, 3 * HEIGHT/6, 50).create(retrofont, "Human_vs_CPU"):
+            players = [Player(1, False), Player(2, True)]
+            game_state = STATE_ROUND_START
+
+        if self.buttons[2].update(WIDTH/2, 4 * HEIGHT/6, 50).create(retrofont, "CPU_vs_CPU"):
+            players = [Player(1, True), Player(2, True)]
+            game_state = STATE_ROUND_START
+
+    def window_handler(self, retrofont):
+        if self.window == 0:
+            self.main(retrofont)
+        elif self.window == 1:
+            self.populate(retrofont)
+        else:
+            pass
+
+# init / instanciando classes
+world = World()
+players = []
+ball = Ball()
+simulated = SimulatedBall()
+menu = Menu()
+retro_font = RetroFont()
 
 def frame_think():
     global game_state, players, mouse_state
