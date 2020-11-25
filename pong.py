@@ -342,6 +342,144 @@ class Menu:
         else:
             pass
 
+class World:
+    def __init__(self):
+        self.states = ["idle", "default"]
+        self.state = 0
+        self.should_update = True
+    
+    def frame_think(self):
+        if self.should_update:
+            if game_state == STATE_MENU:
+                self.state = self.states.index("idle")
+            elif game_state == STATE_ROUND_START or game_state == STATE_PLAYING:
+                self.state = self.states.index("default")
+            self.should_update = False
+
+    def frame_render(self):
+        global window
+        if self.state == self.states.index("default"):
+            pygame.draw.rect(window, (255, 255, 255), (0, 0, WIDTH, 30))
+            pygame.draw.rect(window, (255, 255, 255), (0, HEIGHT - 30, WIDTH, 30))
+
+class Player:
+    # constructor Player
+    # self : self
+    # index : id do jogador (1 ou 2), define posição e controles
+    # bot : define se o jogador é um bot
+    def __init__(self, index, bot):
+        self.width = 30
+        self.height = 150
+        if index == 1:
+            self.origin = Vector2D(self.width, HEIGHT/2 - self.height/2)
+        else:
+            self.origin = Vector2D(WIDTH - self.width * 2, HEIGHT/2 - self.height/2)
+        self.velocity = Vector2D(0, 0)
+        self.id = index
+        self.score = 0
+        if index == 1:
+            self.name = "CPU 1" if bot else "Player 1"
+        else:
+            self.name = "CPU 2" if bot else "Player 2"
+
+        self.is_bot = bot
+        # active_power = [índice de poder, tempo restante]
+        self.active_power = []
+
+        # keys_pressed = {tecla : boolean}
+        self.keys_pressed = {}
+    
+    def update_keys(self, key, value):
+        # se for um bot, ignorar entradas
+        if self.is_bot:
+            return
+
+        # atualizar entradas
+        self.keys_pressed[key] = value
+
+    # limpeza de código
+    def is_key_pressed(self, key):
+        return key in self.keys_pressed and self.keys_pressed[key]
+
+    def handle_keys(self):
+        if game_state != STATE_PLAYING:
+            return
+
+        # atualizar velocidade com base nas teclas pressionadas
+
+        if not self.is_bot:
+            if self.id == 2:
+                if self.is_key_pressed(pygame.K_UP):
+                    self.velocity.y -= 8
+                if self.is_key_pressed(pygame.K_DOWN):
+                    self.velocity.y += 8
+            else:
+                if self.is_key_pressed(pygame.K_w):
+                    self.velocity.y -= 8
+                if self.is_key_pressed(pygame.K_s):
+                    self.velocity.y += 8
+        elif len(simulated.simulated_origins) > 0:
+            if self.id == 1 and ball.velocity.x < 0:
+                collision_index = -1
+                for idx in range(len(simulated.simulated_origins)):
+                    origin = simulated.simulated_origins[idx][0]
+                    dx = abs(origin.x - self.origin.x) if self.id == 2 else abs(origin.x - (self.origin.x + self.width))
+
+                    if dx**2 <= ball.radius**2:
+                        collision_index = idx
+                        break
+                if simulated.simulated_origins[collision_index][0].y - (self.origin.y + self.height/2) < -3:
+                    self.velocity.y -= 30
+                elif simulated.simulated_origins[collision_index][0].y - (self.origin.y + self.height/2) > 3:
+                    self.velocity.y += 30
+            elif self.id == 2 and ball.velocity.x > 0:
+                collision_index = -1
+                for idx in range(len(simulated.simulated_origins)):
+                    origin = simulated.simulated_origins[idx][0]
+                    dx = abs(origin.x - self.origin.x) if self.id == 2 else abs(origin.x - (self.origin.x + self.width))
+
+                    if dx**2 <= ball.radius**2:
+                        collision_index = idx
+                        break
+                if simulated.simulated_origins[collision_index][0].y - (self.origin.y + self.height/2) < -3:
+                    self.velocity.y -= 30
+                elif simulated.simulated_origins[collision_index][0].y - (self.origin.y + self.height/2) > 3:
+                    self.velocity.y += 30
+
+    def apply_velocity(self):
+        # aplicar velocidade na origem
+        self.origin.x += self.velocity.x * (1/(frametime/1000) * 1/framerate)
+        self.origin.y += self.velocity.y * (1/(frametime/1000) * 1/framerate)
+
+        # resetar a velocidade após aplicá-la
+        self.velocity = Vector2D(0, 0)
+
+        # manter o objeto dentro das bordas
+        self.origin.x = max(0, min(WIDTH - self.width, self.origin.x))
+        self.origin.y = max(35, min(HEIGHT - self.height - 35, self.origin.y))
+
+    def frame_think(self):
+        if game_state != STATE_PLAYING and game_state != STATE_ROUND_START:
+            return            
+        
+        self.handle_keys()
+        self.apply_velocity()
+
+    def frame_render(self):
+        if game_state != STATE_PLAYING and game_state != STATE_ROUND_START:
+            return        
+
+        # representando hitboxes
+        if self.id == 1:
+            pygame.draw.rect(window, (255, 0, 0), (self.origin.x + self.width, self.origin.y - 5, 5, 5)) # vermelho, origem x + width, origem y
+            pygame.draw.rect(window, (0, 0, 255), (self.origin.x + self.width, self.origin.y + self.height, 5, 5)) # azul, origem x + width, origem y + height 
+        else:
+            pygame.draw.rect(window, (255, 0, 0), (self.origin.x - 5, self.origin.y - 5, 5, 5)) # vermelho, origem x, origem y
+            pygame.draw.rect(window, (0, 0, 255), (self.origin.x - 5, self.origin.y + self.height, 5, 5)) # azul, origem x, origem y + height
+
+        # desenhar o objeto
+        pygame.draw.rect( window, (255, 255, 255), (self.origin.x, self.origin.y, self.width, self.height) )
+
 # init / instanciando classes
 world = World()
 players = []
