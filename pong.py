@@ -1,9 +1,3 @@
-# init / dependencias
-import pygame
-import math
-import random
-import time
-from copy import copy
 
 # init / janela
 WIDTH = 1280
@@ -12,21 +6,8 @@ window = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption('Pong')
 
 # init / parametros de jogabilidade
-# init / parametros de jogabilidade
 clock = pygame.time.Clock()
 # taxa de frames por segundo
-framerate = 60
-# tempo de execução para cada frame
-frametime = 0
-# contagem de frames
-framecount = 0
-
-# init / estados de jogo
-STATE_MENU = 1 << 0
-STATE_PLAYING = 1 << 1
-STATE_ROUND_START = 1 << 2
-STATE_QUIT = 1 << 3
-game_state = STATE_MENU# taxa de frames por segundo
 framerate = 60
 # tempo de execução para cada frame
 frametime = 0
@@ -45,20 +26,28 @@ game_state = STATE_MENU
 mouse_state = [False, False, False]
 
 pygame.init()
-pygame.font.init()
+pygame.mixer.init()
+
+# init / registrar sons
+sound_score = pygame.mixer.Sound('audio/pong_score.wav')
+sound_hit = pygame.mixer.Sound('audio/pong_hit.wav')
 
 # init / poderes possíveis
 # clairvoyance : quando a bola está vindo na direção do jogador, ele pode ver a trajetória dela
 # strength : quando o usuário bate na bola, o impacto é mais forte
 # haste : o personagem se move mais rápido
 # exhaust : o inimigo se move mais devagar
-powers = ["clairvoyance", "strength", "haste", "exhaust"]
+powers = ["none", "clairvoyance", "strength", "haste", "exhaust"]
 
 # init / parametros globais
-ball_max_vertical_speed = 30
-ball_max_horizontal_speed = 15
+ball_max_vertical_speed = 15
+ball_max_horizontal_speed = 40
 ball_launch_speed = 5
-game_score_win_condition = 10
+game_score_win_condition = 3
+
+# lerp para suavizar a transição de valores
+def lerp(a, b, fac):
+    return a + (b-a)*fac
 
 # classe de vetores 2d
 class Vector2D:
@@ -67,18 +56,12 @@ class Vector2D:
         self.y = y
 
     # overload de operador para soma, multiplicação e divisão
-    # compatível com outro vetor, ou com um número inteiro/float    
+    # compatível com outro vetor, ou com um número inteiro/float
     def __add__(self, other):
         if type(other) == Vector2D:
             return Vector2D(self.x + other.x, self.y + other.y)
         else:
             return Vector2D(self.x + other, self.y + other)
-
-    def __sub__(self, other):
-        if type(other) == Vector2D:
-            return Vector2D(self.x - other.x, self.y - other.y)
-        else:
-            return Vector2D(self.x - other, self.y - other)
 
     def __mul__(self, other):
         if type(other) == Vector2D:
@@ -91,6 +74,12 @@ class Vector2D:
             return Vector2D(self.x / other.x, self.y / other.y)
         else:
             return Vector2D(self.x / other, self.y / other)
+
+    def __sub__(self, other):
+        if type(other) == Vector2D:
+            return Vector2D(self.x - other.x, self.y - other.y)
+        else:
+            return Vector2D(self.x - other, self.y - other)
 
     def length(self):
         return self.x**2 + self.y**2
