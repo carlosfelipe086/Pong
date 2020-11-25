@@ -480,6 +480,237 @@ class Player:
         # desenhar o objeto
         pygame.draw.rect( window, (255, 255, 255), (self.origin.x, self.origin.y, self.width, self.height) )
 
+class Ball:
+    def __init__(self):
+        self.states = ["frozen", "active"]
+        self.state = 1
+        self.origin = Vector2D(WIDTH/2, HEIGHT/2)
+        self.previous_origin = Vector2D(0, 0)
+        self.velocity = Vector2D(0, 0)
+        self.time_elapsed = 0.0
+        self.speed = ball_launch_speed
+        self.radius = 10
+        self.theta = random.randint(0, 360)
+        self.reset_velocity()
+        self.collision_scalars = Vector2D(random.uniform(1, 1.3), random.uniform(0.7, 1.5))
+        self.color = (255, 255, 255)
+
+    def player_collision(self, player):
+        global simulated
+        dx = abs(self.origin.x - player.origin.x) if player.id == 2 else abs(self.origin.x - (player.origin.x + player.width))
+
+        if dx**2 <= self.radius**2 and self.origin.y + self.radius > player.origin.y and self.origin.y - self.radius < player.origin.y + player.height:
+            self.color = (255, 0, 0)
+            #hit_height = self.origin.y - player.origin.y
+            #paddle_mid = player.height / 2.0
+            self.collision_scalars = Vector2D(random.uniform(1, 1.3), random.uniform(0.7, 1.5))
+            self.velocity.x *= -self.collision_scalars.x
+            self.velocity.y *= self.collision_scalars.y
+            simulated.apply_simulated_data([self.origin, self.velocity, self.theta, self.time_elapsed, self.collision_scalars, self.state])
+        else:
+            delta_origin = Vector2D(self.origin.x - self.previous_origin.x, self.origin.y - self.previous_origin.y)
+            if delta_origin.length() < self.radius**2:
+                return
+
+            simulation_step = delta_origin / 10
+            for i in range(10):
+                simulated_origin = self.previous_origin + (simulation_step * i)
+                if self.did_collide(simulated_origin, player):
+                    self.color = (255, 0, 0)
+                    #hit_height = self.origin.y - player.origin.y
+                    #paddle_mid = player.height / 2.0
+                    self.origin = copy(self.previous_origin)
+                    self.collision_scalars = Vector2D(random.uniform(1, 1.3), random.uniform(0.7, 1.5))
+                    self.velocity.x *= -self.collision_scalars.x
+                    self.velocity.y *= self.collision_scalars.y
+                    simulated.apply_simulated_data([self.origin, self.velocity, self.theta, self.time_elapsed, self.collision_scalars, self.state])
+                    break
+
+    def did_collide(self, origin, player):
+        dx = abs(origin.x - player.origin.x) if player.id == 2 else abs(origin.x - (player.origin.x + player.width))
+        
+        if dx**2 <= self.radius**2 and origin.y + self.radius > player.origin.y and origin.y - self.radius < player.origin.y + player.height:
+            return True
+
+        return False
+
+    def reset_velocity(self):
+        while self.theta % 90 != 0:
+            self.theta = random.randint(0, 360)
+        self.velocity = Vector2D(self.speed * math.cos(self.theta), -self.speed * math.sin(self.theta))
+
+    def handle_collisions(self):
+        global players, game_state
+
+        for player in players:
+            self.player_collision(player)
+
+        if self.origin.x + self.radius > WIDTH:
+            players[0].score += 1
+            self.velocity = Vector2D(0, 0)
+            game_state = STATE_ROUND_START
+        elif self.origin.x - self.radius < 0:
+            players[1].score += 1
+            self.velocity = Vector2D(0, 0)
+            game_state = STATE_ROUND_START
+
+        if self.origin.y - self.radius <= 30 or self.origin.y + self.radius >= HEIGHT - 30:
+            if self.origin.y - self.radius <= 30:
+                self.origin.y = 30 + self.radius
+            else:
+                self.origin.y = HEIGHT - self.radius - 30
+
+            self.velocity.x *= 1 + (self.time_elapsed/(10**5))
+            self.velocity.y *= -(1 + (self.time_elapsed/(10**5)))
+            simulated.apply_simulated_data([self.origin, self.velocity, self.theta, self.time_elapsed, self.collision_scalars, self.state])
+
+    def apply_velocity(self):
+        self.origin.x += self.velocity.x * (1/(frametime/1000) * 1/framerate)
+        self.origin.y += self.velocity.y * (1/(frametime/1000) * 1/framerate)
+
+        if abs(self.velocity.x) > ball_max_horizontal_speed:
+            self.velocity.x = -ball_max_horizontal_speed if self.velocity.x < 0 else ball_max_horizontal_speed
+        if abs(self.velocity.y) > ball_max_vertical_speed:
+            self.velocity.y = -ball_max_vertical_speed if self.velocity.y < 0 else ball_max_vertical_speed
+
+    def frame_think(self):
+        self.color = (255, 255, 255)
+
+        self.apply_velocity()
+        self.handle_collisions()
+
+        self.time_elapsed += 0.1 * (1/(frametime/1000) * 1/framerate)
+        self.previous_origin = copy(self.origin)
+        #simulated.quick_apply_simulated_data([self.origin, self.velocity, self.theta, self.time_elapsed, self.collision_scalars, self.state])
+
+    def frame_render(self):
+        global window
+
+        pygame.draw.circle(window, self.color, (self.origin.x, self.origin.y), self.radius)
+
+class SimulatedBall:
+    def __init__(self):
+        self.states = ["frozen", "active"]
+        self.state = 1
+        self.origin = Vector2D(WIDTH/2, HEIGHT/2)
+        self.previous_origin = Vector2D(0, 0)
+        self.velocity = Vector2D(0, 0)
+        self.time_elapsed = 0.0
+        self.speed = 5
+        self.radius = 10
+        self.theta = random.randint(0, 360)
+        self.reset_velocity()
+        self.collision_scalars = Vector2D(random.uniform(1, 1.3), random.uniform(0.7, 1.5))
+        self.color = (255, 0, 0, 80)
+        self.simulated_origins = []
+
+    def player_collision(self, player):
+        dx = abs(self.origin.x - player.origin.x) if player.id == 2 else abs(self.origin.x - (player.origin.x + player.width))
+
+        if dx**2 <= self.radius**2 and self.origin.y + self.radius > player.origin.y and self.origin.y - self.radius < player.origin.y + player.height:
+            self.velocity.x *= -self.collision_scalars.x
+            self.velocity.y *= self.collision_scalars.y
+        else:
+            delta_origin = self.origin - self.previous_origin
+            if delta_origin.length() < self.radius**2:
+                return
+
+            simulation_step = delta_origin / 3
+            for i in range(3):
+                simulated_origin = self.previous_origin + (simulation_step * i)
+                if self.did_collide(simulated_origin, player):
+                    self.origin = copy(self.previous_origin)
+                    self.velocity.x *= -self.collision_scalars.x
+                    self.velocity.y *= self.collision_scalars.y
+                    break
+
+    def did_collide(self, origin, player):
+        dx = abs(origin.x - player.origin.x) if player.id == 2 else abs(origin.x - (player.origin.x + player.width))
+        
+        if dx**2 <= self.radius**2 and origin.y + self.radius > player.origin.y and origin.y - self.radius < player.origin.y + player.height:
+            return True
+
+        return False
+
+    def reset_velocity(self):
+        self.theta = random.randint(0, 360)
+        self.velocity = Vector2D(self.speed * math.cos(self.theta), -self.speed * math.sin(self.theta))
+
+    def handle_collisions(self):
+        global players, game_state
+
+        for player in players:
+            self.player_collision(player)
+
+        if self.origin.x + self.radius > WIDTH:
+            self.velocity = Vector2D(0, 0)
+            self.state = self.states.index("frozen")
+        elif self.origin.x - self.radius < 0:
+            self.velocity = Vector2D(0, 0)
+            self.state = self.states.index("frozen")
+
+        if self.origin.y - self.radius <= 30 or self.origin.y + self.radius >= HEIGHT - 30:
+            if self.origin.y - self.radius <= 30:
+                self.origin.y = 30 + self.radius
+            else:
+                self.origin.y = HEIGHT - self.radius - 30
+
+            self.velocity.x *= 1 + (self.time_elapsed/(10**5))
+            self.velocity.y *= -(1 + (self.time_elapsed/(10**5)))
+
+    def apply_simulated_data(self, data):
+        self.origin = copy(data[0])
+        self.velocity = copy(data[1])
+        self.theta = copy(data[2])
+        self.time_elapsed = copy(data[3])
+        self.collision_scalars = copy(data[4])
+        self.state = copy(data[5])
+        self.simulated_origins = []
+
+    def quick_apply_simulated_data(self, data):
+        self.origin = copy(data[0])
+        self.velocity = copy(data[1])
+        self.theta = copy(data[2])
+        self.time_elapsed = copy(data[3])
+        self.collision_scalars = copy(data[4])
+
+    def apply_velocity(self):
+        self.origin.x += self.velocity.x * (1/(frametime/1000) * 1/framerate)
+        self.origin.y += self.velocity.y * (1/(frametime/1000) * 1/framerate)
+
+        if abs(self.velocity.x) > 18:
+            self.velocity.x += -1 if self.velocity.x > 0 else 1
+        if abs(self.velocity.y) > 43:
+            self.velocity.y = -43 if self.velocity.y < 0 else 43
+
+    def frame_think(self):
+        prediction_time = 0.0
+        # check if the ball state is "frozen" during this simulation or if we predict for more than 15 seconds
+        while self.state != self.states.index("frozen") and prediction_time <= 10.0:
+            self.apply_velocity()
+            self.handle_collisions()
+
+            self.time_elapsed += 0.1 * (1/(frametime/1000) * 1/framerate)
+            prediction_time += frametime/1000
+            self.simulated_origins.append([copy(self.origin), self.time_elapsed])
+            self.previous_origin = copy(self.origin)
+
+    def frame_render(self):
+        global window
+
+        pending_deletion = []
+
+        for idx in range(len(self.simulated_origins)):
+            origin = self.simulated_origins[idx][0]
+            self.color = (255/len(self.simulated_origins) * idx, 0, 0)
+            pygame.draw.circle(window, self.color, (origin.x, origin.y), self.radius)
+            if self.simulated_origins[idx][1] <= ball.time_elapsed:
+                pending_deletion.append(idx)
+
+        for idx in pending_deletion:
+            self.simulated_origins.pop(idx)
+
+
 # init / instanciando classes
 world = World()
 players = []
