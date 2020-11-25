@@ -242,6 +242,7 @@ class RetroFont:
         self.letters = {}
         self.initialize_letters()
 
+
 class Button:
     def __init__(self, x, y, scale):
         self.width = 0
@@ -251,6 +252,8 @@ class Button:
         # scale define o crescimento do botão quando o jogador passa o seu mouse em cima dele
         self.scale = scale
         self.origin = Vector2D(x, y)
+        self.should_update = True
+        self.text = ""
 
     def update(self, x, y, scale):
         self.scale = scale
@@ -259,11 +262,16 @@ class Button:
 
     def create(self, retrofont, wrd):
         global window
+
+        if wrd != self.text:
+            self.text = wrd
+            self.should_update = True
         
         self.size = Vector2D(len(wrd) * 25, 50)
-        if abs(self.width - self.size.x) > self.scale:
+        if abs(self.width - self.size.x) > self.scale or abs(self.height - self.size.y) > self.scale or self.should_update == True:
             self.width = self.size.x
             self.height = self.size.y
+            self.should_update = False
 
         cursor_position = pygame.mouse.get_pos()
         mouse_over = False
@@ -288,7 +296,6 @@ class Button:
 
         # mouse em cima do botão e botão do mouse liberado
         return mouse_over and mouse_state[2]
-    
 
 class Menu:
     def __init__(self):
@@ -296,60 +303,237 @@ class Menu:
         # populate : define humano vs humano, humano vs cpu ou cpu vs cpu
         # settings : configurações
         # quit : sai do jogo
-        self.windows = ["main", "populate","settings", "quit"]
+        self.windows = ["main", "populate", "settings", "in_game", "endscreen", "none"]
         self.window = 0
+        self.previous_window = 0
         self.width = 100
         self.height = 50
         # 5 botões alocados para serem usandos quando necessário
-        self.buttons = [Button(0, 0, 0), Button(0, 0, 0), Button(0, 0, 0), Button(0, 0, 0), Button(0, 0, 0)]
+        self.buttons = [Button(0, 0, 0), Button(0, 0, 0), Button(0, 0, 0), Button(0, 0, 0), Button(0, 0, 0), Button(0, 0, 0), Button(0, 0, 0)]
 
     def main(self, retrofont):
+        # menu principal 
         global game_state
         retrofont.draw_words("PONG", WIDTH/2, HEIGHT/2 - (36 * 7), 72, (255, 255, 255))
         if self.buttons[0].update(WIDTH/2, HEIGHT/2, 50).create(retrofont, "PLAY"):
+            self.previous_window = self.window
             self.window = self.windows.index("populate")
 
+        if self.buttons[1].update(WIDTH/2, HEIGHT/2 + 100, 50).create(retrofont, "SETTINGS"):
+            self.previous_window = self.window
+            self.window = self.windows.index("settings")
+
+    def in_game(self, retrofont):
+        # menu de 'pause'
+        global game_state, ball, world
+
+        if self.buttons[0].update(WIDTH/2, 2* HEIGHT/6, 50).create(retrofont, "RESUME"):
+            self.previous_window = self.window
+            self.window = self.windows.index("none")
+            
+        if self.buttons[1].update(WIDTH/2, 3* HEIGHT/6, 50).create(retrofont, "OPTIONS"):
+            self.previous_window = self.window
+            self.window = self.windows.index("settings")
+        
+        if self.buttons[2].update(WIDTH/2, 4* HEIGHT/6, 50).create(retrofont, "MAIN_MENU"):
+            world.should_update = True
+            game_state = STATE_MENU
+            ball = Ball()
+            self.previous_window = self.window
+            self.window = self.windows.index("main")
+
+    def end_screen(self, retrofont):
+        # tela final do jogo
+        global game_state, ball, players, game_score_win_condition, world
+
+        winner = players[0] if players[0].score >= game_score_win_condition else players[1]
+        retro_font.draw_words(winner.name + "_won!", WIDTH/2, 2* HEIGHT/6, 80, (255, 255, 255))
+
+        if self.buttons[2].update(WIDTH/2, 4* HEIGHT/6, 50).create(retrofont, "MAIN_MENU"):
+            world.should_update = True
+            game_state = STATE_MENU
+            ball = Ball()
+            self.previous_window = self.window
+            self.window = self.windows.index("main")
+
     def populate(self, retrofont):
-        global game_state, players
-        if self.buttons[0].update(WIDTH/2, 2 * HEIGHT/6, 50).create(retrofont, "Human_vs_Human"):
+        # modo de jogo
+        global game_state, players, world
+
+        if self.buttons[0].update(100, HEIGHT/6, 50).create(retrofont, "BACK"):
+            self.window = self.previous_window
+
+        if self.buttons[1].update(WIDTH/2, 2 * HEIGHT/6, 50).create(retrofont, "Human_vs_Human"):
+            world.should_update = True
             players = [Player(1, False), Player(2, False)]
             game_state = STATE_ROUND_START
+            self.previous_window = self.window
+            self.window = self.windows.index("none")
 
-        if self.buttons[1].update(WIDTH/2, 3 * HEIGHT/6, 50).create(retrofont, "Human_vs_CPU"):
+        if self.buttons[2].update(WIDTH/2, 3 * HEIGHT/6, 50).create(retrofont, "Human_vs_CPU"):
+            world.should_update = True
             players = [Player(1, False), Player(2, True)]
             game_state = STATE_ROUND_START
+            self.previous_window = self.window
+            self.window = self.windows.index("none")
 
-        if self.buttons[2].update(WIDTH/2, 4 * HEIGHT/6, 50).create(retrofont, "CPU_vs_CPU"):
+        if self.buttons[3].update(WIDTH/2, 4 * HEIGHT/6, 50).create(retrofont, "CPU_vs_CPU"):
+            world.should_update = True
             players = [Player(1, True), Player(2, True)]
             game_state = STATE_ROUND_START
+            self.previous_window = self.window
+            self.window = self.windows.index("none")
+
+    def settings(self, retrofont):
+        # configurações
+        global game_score_win_condition, ball_max_vertical_speed, ball_max_horizontal_speed
+
+        height_step = 2
+
+        if self.buttons[0].update(100, HEIGHT/6, 50).create(retrofont, "BACK"):
+            self.window = self.previous_window
+        
+        if self.buttons[1].update(WIDTH/2 - 120, height_step * HEIGHT/6, 50).create(retrofont, "-"):
+            game_score_win_condition -= 1
+        retrofont.draw_words("score_win_condition", WIDTH/2, height_step * HEIGHT/6 - 50, 25, (255, 255, 255))
+        retrofont.draw_words(str(game_score_win_condition), WIDTH/2, height_step * HEIGHT/6, 50, (255, 255, 255))
+        if self.buttons[2].update(WIDTH/2 + 120, height_step * HEIGHT/6, 50).create(retrofont, "+"):
+            game_score_win_condition += 1
+        
+        height_step += 1
+
+        if self.buttons[3].update(WIDTH/2 - 120, height_step * HEIGHT/6, 50).create(retrofont, "-") and ball_max_vertical_speed > 0:
+            ball_max_vertical_speed -= 1
+        retrofont.draw_words("ball_max_vertical_speed", WIDTH/2, height_step * HEIGHT/6 - 50, 25, (255, 255, 255))
+        retrofont.draw_words(str( int(100/18 * ball_max_vertical_speed) ) + "%", WIDTH/2, height_step * HEIGHT/6, 50, (255, 255, 255))
+        if self.buttons[4].update(WIDTH/2 + 120, height_step * HEIGHT/6, 50).create(retrofont, "+") and ball_max_vertical_speed < 18:
+            ball_max_vertical_speed += 1
+        
+        height_step += 1
+
+        if self.buttons[5].update(WIDTH/2 - 120, height_step * HEIGHT/6, 50).create(retrofont, "-") and ball_max_horizontal_speed > 0:
+            ball_max_horizontal_speed -= 1
+        retrofont.draw_words("ball_max_horizontal_speed", WIDTH/2, height_step * HEIGHT/6 - 50, 25, (255, 255, 255))
+        retrofont.draw_words(str( int(100/45 * ball_max_horizontal_speed) ) + "%", WIDTH/2, height_step * HEIGHT/6, 50, (255, 255, 255))
+        if self.buttons[6].update(WIDTH/2 + 120, height_step * HEIGHT/6, 50).create(retrofont, "+") and ball_max_horizontal_speed < 45:
+            ball_max_horizontal_speed += 1
+        
+        height_step += 1
 
     def window_handler(self, retrofont):
+        # gerencia qual janela é renderiza no momento
+
         if self.window == 0:
             self.main(retrofont)
         elif self.window == 1:
             self.populate(retrofont)
+        elif self.window == 2:
+            self.settings(retrofont)
+        elif self.window == 3:
+            self.in_game(retrofont)
+        elif self.window == 4:
+            self.end_screen(retrofont)
         else:
             pass
+
+class PowerBox:
+    def __init__(self, x, y):
+        self.origin = Vector2D(x, y)
+        self.size = 70
+        self.destruct = False
+
+    def frame_render(self):
+        global window, retro_font
+
+        pygame.draw.rect(window, (255, 255, 255), (self.origin.x, self.origin.y, self.size, self.size))
+        #pygame.draw.line(window, (255, 0, 0), (self.origin.x, self.origin.y), (self.origin.x, self.origin.y + self.size))
+        #pygame.draw.line(window, (255, 0, 0), (self.origin.x, self.origin.y), (self.origin.x + self.size, self.origin.y))
+        #pygame.draw.line(window, (255, 0, 0), (self.origin.x + self.size, self.origin.y), (self.origin.x + self.size, self.origin.y + self.size))
+        #pygame.draw.line(window, (255, 0, 0), (self.origin.x, self.origin.y + self.size), (self.origin.x + self.size, self.origin.y + self.size))
+
+        retro_font.draw_words("?", self.origin.x + self.size*0.5, self.origin.y + self.size*0.5, 40, (0, 0, 0))
 
 class World:
     def __init__(self):
         self.states = ["idle", "default"]
         self.state = 0
         self.should_update = True
-    
+        self.round_time = 0.0
+        self.previous_box_spawn_time = 0.0
+        self.pre_start_time_remaining = 0
+        self.pre_start_time = 0
+        self.power_boxes = []
+
     def frame_think(self):
         if self.should_update:
             if game_state == STATE_MENU:
                 self.state = self.states.index("idle")
             elif game_state == STATE_ROUND_START or game_state == STATE_PLAYING:
+                if game_state == STATE_ROUND_START:
+                    self.round_time = 0.0
+                    self.previous_box_spawn_time = 0.0
                 self.state = self.states.index("default")
             self.should_update = False
 
-    def frame_render(self):
-        global window
         if self.state == self.states.index("default"):
-            pygame.draw.rect(window, (255, 255, 255), (0, 0, WIDTH, 30))
-            pygame.draw.rect(window, (255, 255, 255), (0, HEIGHT - 30, WIDTH, 30))
+            # spawnamos uma powerbox após x (8-30) segundos após o ultimo spawn
+            if self.round_time > self.previous_box_spawn_time + random.uniform(8, 30) and len(self.power_boxes) <= 0 and ball.collision_info[1] > 0:
+                self.power_boxes = [PowerBox( random.randint(140, WIDTH - 140), random.randint(120, HEIGHT - 120) )]
+                self.previous_box_spawn_time = copy(self.round_time)
+            
+            for power_box in self.power_boxes:
+                if power_box.destruct == True:
+                    self.power_boxes.clear()
+
+            # incrementar para o tempo do round
+            self.round_time += frametime/1000
+        elif self.state == self.states.index("idle"):
+            if len(self.power_boxes) > 0:
+                self.power_boxes.clear()
+
+    def round_pre_start(self, retro_font, time):
+        # display de pontuações antes do round começar
+        global players
+
+        if time > 0:
+            self.pre_start_time_remaining = time
+            self.pre_start_time = time
+
+        if self.pre_start_time <= 0 or self.pre_start_time_remaining < 0.1:
+            return
+
+        rgb = min(255, max(0, 255/self.pre_start_time * self.pre_start_time_remaining))
+
+        retro_font.draw_words(str(players[0].score), 100, 3 * HEIGHT/6, 60, (rgb, rgb, rgb))
+        retro_font.draw_words(str(players[1].score), WIDTH - 100, 3 * HEIGHT/6, 60, (rgb, rgb, rgb))
+        
+        self.pre_start_time_remaining -= frametime/1000
+
+    def render_borders(self, retro_font):
+        # renderizar bordas com informações do poder atual de cada player, se este tiver um ativo
+        global window, players
+
+        pygame.draw.rect(window, (255, 255, 255), (0, 0, WIDTH, 30))
+        pygame.draw.rect(window, (255, 255, 255), (0, HEIGHT - 30, WIDTH, 30))
+
+        if players[0].active_power[0] != 0:
+            power_data = players[0].active_power
+            rgb = min(255, max(0, (255 - 255/power_data[2] * power_data[1])))
+            retro_font.draw_words(powers[power_data[0]], 70, 15, 8, (rgb, rgb, rgb))
+
+        if players[1].active_power[0] != 0:
+            power_data = players[1].active_power
+            rgb = min(255, max(0, (255 - 255/power_data[2] * power_data[1])))
+            retro_font.draw_words(powers[power_data[0]], WIDTH - 70, 15, 8, (rgb, rgb, rgb))
+
+    def frame_render(self):
+        # renderizar bordas e power boxes
+        global window, retro_font
+        if self.state == self.states.index("default"):
+            self.render_borders(retro_font)
+
+            for power_box in self.power_boxes:
+                power_box.frame_render()
 
 class Player:
     # constructor Player
