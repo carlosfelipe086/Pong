@@ -50,3 +50,6 @@ Atualmente as configurações são:
 • Limite de velocidade horizontal da bola;
 ###
 • Limite de velocidade vertical da bola;
+
+## Demonstração em video:
+https://www.youtube.com/watch?v=JTOQqiW2LuE
