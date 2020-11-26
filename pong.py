@@ -1,3 +1,10 @@
+# init / dependencias
+import geometry
+import pygame
+import math
+import random
+import time
+from copy import copy
 
 # init / janela
 WIDTH = 1280
@@ -534,7 +541,7 @@ class World:
 
             for power_box in self.power_boxes:
                 power_box.frame_render()
-
+            
 class Player:
     # constructor Player
     # self : self
@@ -543,21 +550,32 @@ class Player:
     def __init__(self, index, bot):
         self.width = 30
         self.height = 150
+        
         if index == 1:
             self.origin = Vector2D(self.width, HEIGHT/2 - self.height/2)
+            self.name = "CPU_1" if bot else "Player_1"
         else:
             self.origin = Vector2D(WIDTH - self.width * 2, HEIGHT/2 - self.height/2)
+            self.name = "CPU_2" if bot else "Player_2"
+
         self.velocity = Vector2D(0, 0)
+        self.max_velocity = math.sqrt(ball_max_horizontal_speed**2 + ball_max_vertical_speed)* 0.15
+        
+        # utilizada na suavização do movimento do jogador
+        self.drag = 0.2
+        
         self.id = index
         self.score = 0
-        if index == 1:
-            self.name = "CPU 1" if bot else "Player 1"
-        else:
-            self.name = "CPU 2" if bot else "Player 2"
+
+        # dados de colisão
+        self.collision_data = None
+
+        # variável utilizada para prevenir que o jogador use dados simulados além daqueles que ele deve utilizar
+        self.can_predict_collision = True
 
         self.is_bot = bot
-        # active_power = [índice de poder, tempo restante]
-        self.active_power = []
+        # active_power = [índice de poder, tempo restante, tempo maximo]
+        self.active_power = [powers.index("none"), 0.0, 0.0]
 
         # keys_pressed = {tecla : boolean}
         self.keys_pressed = {}
@@ -570,8 +588,8 @@ class Player:
         # atualizar entradas
         self.keys_pressed[key] = value
 
-    # limpeza de código
     def is_key_pressed(self, key):
+        # verifica se a tecla levantada foi pressionada anteriormente
         return key in self.keys_pressed and self.keys_pressed[key]
 
     def handle_keys(self):
@@ -579,62 +597,112 @@ class Player:
             return
 
         # atualizar velocidade com base nas teclas pressionadas
-
         if not self.is_bot:
             if self.id == 2:
                 if self.is_key_pressed(pygame.K_UP):
-                    self.velocity.y -= 8
+                    self.velocity.y -= math.sqrt(ball_max_horizontal_speed**2 + ball_max_vertical_speed)* 0.15
                 if self.is_key_pressed(pygame.K_DOWN):
-                    self.velocity.y += 8
+                    self.velocity.y += math.sqrt(ball_max_horizontal_speed**2 + ball_max_vertical_speed)* 0.15
             else:
                 if self.is_key_pressed(pygame.K_w):
-                    self.velocity.y -= 8
+                    self.velocity.y -= math.sqrt(ball_max_horizontal_speed**2 + ball_max_vertical_speed)* 0.15
                 if self.is_key_pressed(pygame.K_s):
-                    self.velocity.y += 8
-        elif len(simulated.simulated_origins) > 0:
+                    self.velocity.y += math.sqrt(ball_max_horizontal_speed**2 + ball_max_vertical_speed)* 0.15
+        # atualizar velocidade para bots
+        elif len(simulated.simulated_origins) > 1:
             if self.id == 1 and ball.velocity.x < 0:
-                collision_index = -1
-                for idx in range(len(simulated.simulated_origins)):
-                    origin = simulated.simulated_origins[idx][0]
-                    dx = abs(origin.x - self.origin.x) if self.id == 2 else abs(origin.x - (self.origin.x + self.width))
+                # se a bola estiver vindo na direção do bot, procurar pelo primeiro ponto em que a bola passa pela coordenada X do jogador
+                if self.can_predict_collision == True:
+                    if len(simulated.left_hits) > 0:
+                        self.collision_data = simulated.left_hits[0]
+                        self.can_predict_collision = False
 
-                    if dx**2 <= ball.radius**2:
-                        collision_index = idx
-                        break
-                if simulated.simulated_origins[collision_index][0].y - (self.origin.y + self.height/2) < -3:
-                    self.velocity.y -= 30
-                elif simulated.simulated_origins[collision_index][0].y - (self.origin.y + self.height/2) > 3:
-                    self.velocity.y += 30
+                if self.collision_data == None:
+                    return
+
+                if type(self.collision_data) != Vector2D:
+                    self.collision_data = Vector2D(self.collision_data[0], self.collision_data[1])
+
+                # quando acharmos um ponto, o bot tentarar centralizar ele em sua paddle
+                self.velocity.y = self.collision_data.y - (self.origin.y + self.height/2)
             elif self.id == 2 and ball.velocity.x > 0:
-                collision_index = -1
-                for idx in range(len(simulated.simulated_origins)):
-                    origin = simulated.simulated_origins[idx][0]
-                    dx = abs(origin.x - self.origin.x) if self.id == 2 else abs(origin.x - (self.origin.x + self.width))
+                if self.can_predict_collision == True:
+                    if len(simulated.right_hits) > 0:
+                        self.collision_data = simulated.right_hits[0]
+                        self.can_predict_collision = False
 
-                    if dx**2 <= ball.radius**2:
-                        collision_index = idx
-                        break
-                if simulated.simulated_origins[collision_index][0].y - (self.origin.y + self.height/2) < -3:
-                    self.velocity.y -= 30
-                elif simulated.simulated_origins[collision_index][0].y - (self.origin.y + self.height/2) > 3:
-                    self.velocity.y += 30
+                if self.collision_data == None:
+                    return
+
+                if type(self.collision_data) != Vector2D:
+                    self.collision_data = Vector2D(self.collision_data[0], self.collision_data[1])
+
+                self.velocity.y = self.collision_data.y - (self.origin.y + self.height/2)
 
     def apply_velocity(self):
+        # limite de velocidade do jogador
+        self.velocity.y = max(min(self.velocity.y, self.max_velocity), -self.max_velocity)
+
         # aplicar velocidade na origem
         self.origin.x += self.velocity.x * (1/(frametime/1000) * 1/framerate)
         self.origin.y += self.velocity.y * (1/(frametime/1000) * 1/framerate)
 
         # resetar a velocidade após aplicá-la
-        self.velocity = Vector2D(0, 0)
+        self.velocity = lerp(self.velocity, Vector2D(0, 0), self.drag)
 
         # manter o objeto dentro das bordas
         self.origin.x = max(0, min(WIDTH - self.width, self.origin.x))
         self.origin.y = max(35, min(HEIGHT - self.height - 35, self.origin.y))
 
+    def process_power(self):
+        # decay do tempo de poder ativo do jogador
+        if self.active_power[1] > 0.0:
+            self.active_power[1] -= frametime/1000
+        else:
+            self.active_power = [0, 0.0, 0.0]
+
+        if self.active_power[0] == powers.index("haste"):
+            if players[ 0 if self.id == 2 else 1 ].active_power[0] == powers.index("exhaust"):
+            # se o jogador tiver "haste", mas o inimigo tiver "exhaust", achar um limite de velocidade um pouco acima da velocidade do "exhaust" mas abaixo da velocidade padrão
+                self.max_velocity = math.sqrt(ball_max_horizontal_speed**2 + ball_max_vertical_speed)* 0.12
+            else:
+            # se o jogador tiver "haste", deixar com que ele se mova mais rápido
+                self.max_velocity = math.sqrt(ball_max_horizontal_speed**2 + ball_max_vertical_speed)* 0.17
+        elif players[ 0 if self.id == 2 else 1 ].active_power[0] == powers.index("exhaust"):
+            # se o jogador inimigo tiver "exhaust", limitar a velocidade do jogador abaixo do padrão
+            self.max_velocity = math.sqrt(ball_max_horizontal_speed**2 + ball_max_vertical_speed)* 0.1
+        else:
+            # se nenhuma das condições acima se aplicarem, utilizar a velocidade máxima padrão
+            self.max_velocity = math.sqrt(ball_max_horizontal_speed**2 + ball_max_vertical_speed)* 0.15
+
+    def render_power(self):
+        if self.active_power[0] == powers.index("clairvoyance"):
+            if self.id == 1 and ball.velocity.x > 0 or self.id == 2 and ball.velocity.x < 0:
+                return
+            # se o jogador tiver o poder "clairvoyance" e a bola estiver vindo na sua direção, procurar o primeiro ponto em que a bola atravessa a sua coordenada X
+            if self.can_predict_collision == True:
+                if len(simulated.left_hits) > 0 and self.id == 1:
+                    self.collision_data = simulated.left_hits[0]
+                    self.can_predict_collision = False
+                elif len(simulated.right_hits) > 0 and self.id == 2:
+                    self.collision_data = simulated.right_hits[0]
+                    self.can_predict_collision = False
+
+            if self.collision_data == None:
+                    return
+
+            if type(self.collision_data) != Vector2D:
+                self.collision_data = Vector2D(self.collision_data[0], self.collision_data[1])
+
+            # quando acharmos um ponto, renderizar 
+            pygame.draw.circle(window, (130, 130, 130), (self.collision_data.x, self.collision_data.y), 10)
+
     def frame_think(self):
+        global players
         if game_state != STATE_PLAYING and game_state != STATE_ROUND_START:
-            return            
-        
+            return
+
+        self.process_power()
         self.handle_keys()
         self.apply_velocity()
 
@@ -643,95 +711,239 @@ class Player:
             return        
 
         # representando hitboxes
-        if self.id == 1:
-            pygame.draw.rect(window, (255, 0, 0), (self.origin.x + self.width, self.origin.y - 5, 5, 5)) # vermelho, origem x + width, origem y
-            pygame.draw.rect(window, (0, 0, 255), (self.origin.x + self.width, self.origin.y + self.height, 5, 5)) # azul, origem x + width, origem y + height 
-        else:
-            pygame.draw.rect(window, (255, 0, 0), (self.origin.x - 5, self.origin.y - 5, 5, 5)) # vermelho, origem x, origem y
-            pygame.draw.rect(window, (0, 0, 255), (self.origin.x - 5, self.origin.y + self.height, 5, 5)) # azul, origem x, origem y + height
+        #if self.id == 1:
+        #    pygame.draw.rect(window, (255, 0, 0), (self.origin.x + self.width, self.origin.y - 5, 5, 5)) # vermelho, origem x + width, origem y
+        #    pygame.draw.rect(window, (0, 0, 255), (self.origin.x + self.width, self.origin.y + self.height, 5, 5)) # azul, origem x + width, origem y + height 
+        #else:
+        #    pygame.draw.rect(window, (255, 0, 0), (self.origin.x - 5, self.origin.y - 5, 5, 5)) # vermelho, origem x, origem y
+        #    pygame.draw.rect(window, (0, 0, 255), (self.origin.x - 5, self.origin.y + self.height, 5, 5)) # azul, origem x, origem y + height
 
         # desenhar o objeto
         pygame.draw.rect( window, (255, 255, 255), (self.origin.x, self.origin.y, self.width, self.height) )
+
+        self.render_power()
 
 class Ball:
     def __init__(self):
         self.states = ["frozen", "active"]
         self.state = 1
         self.origin = Vector2D(WIDTH/2, HEIGHT/2)
+        
+        # utilizada em efeito visual
+        self.origin_history = []
+
+        # utlizada na verificação de colisão
         self.previous_origin = Vector2D(0, 0)
+        self.backup_origin = Vector2D(0, 0)
+
         self.velocity = Vector2D(0, 0)
+
+        # utilizada no aumento gradual da velocidade da bola 
         self.time_elapsed = 0.0
+
         self.speed = ball_launch_speed
         self.radius = 10
-        self.theta = random.randint(0, 360)
+
+        # utlizada na direção de lançamento da bola
+        self.theta = 90
+
         self.reset_velocity()
         self.collision_scalars = Vector2D(random.uniform(1, 1.3), random.uniform(0.7, 1.5))
         self.color = (255, 255, 255)
 
+        # collision_info = [ "poder", id_jogador ]
+        self.collision_info = [ "none", -1 ]
+
+    def apply_power(self, player):
+        global players
+        
+        # não há poder ativo nesse jogador, resetamos o poder registrado na bola e registramos o id do jogador com quem a bola fez contato pela ultima vez
+        self.collision_info[1] = player.id
+        if player.active_power[0] <= 0:
+            self.collision_info[0] = "none"
+            return
+
+        # caso o jogador tenha o poder 'strength', aplicamos uma velocidade horizontal maior pós colisão e resetamos o seu poder
+        # também registramos esse poder como o atual na bola
+        if player.active_power[0] == powers.index("strength"):
+            self.collision_scalars.x *= 1.3
+            self.collision_info = ["strength", player.id]
+            player.active_power[0] = 0
+
+    def render_power(self):
+        if self.collision_info[0] == "none":
+            return
+
+        # efeito visual do "strength" (trilha atrás da bola)
+        if self.collision_info[0] == "strength":
+            if len(self.origin_history) > 2:
+                for i in range(len(self.origin_history) - 1, -1, -1):
+                    pygame.draw.circle(window, (self.color[0]/len(self.origin_history) * i, self.color[1]/len(self.origin_history) * i, self.color[2]/len(self.origin_history) * i), (self.origin_history[i].x, self.origin_history[i].y), self.radius)
+
+    def power_box_collision(self, power_box):
+        global players 
+
+        # se a bola não tiver uma última colisão com jogador neste round, retornar
+        if self.collision_info[1] <= 0:
+            return
+
+        # menor distância entre o centro da bola e as vértices da powerbox
+        distances = [ geometry.distPointToSegment((power_box.origin.x, power_box.origin.y), (power_box.origin.x, power_box.origin.y + power_box.size), (self.origin.x, self.origin.y) )]
+        distances += [ geometry.distPointToSegment((power_box.origin.x, power_box.origin.y), (power_box.origin.x + power_box.size, power_box.origin.y), (self.origin.x, self.origin.y))]
+        distances += [ geometry.distPointToSegment((power_box.origin.x + power_box.size, power_box.origin.y), (power_box.origin.x + power_box.size, power_box.origin.y + power_box.size), (self.origin.x, self.origin.y)) ]
+        distances += [ geometry.distPointToSegment((power_box.origin.x, power_box.origin.y + power_box.size), (power_box.origin.x + power_box.size, power_box.origin.y + power_box.size), (self.origin.x, self.origin.y)) ]
+
+        for distance in distances:
+            # se a distancia for menor que ou igual ao raio da bola
+            if distance <= self.radius:
+                # reproduzir o som de "hit"
+                sound_hit.play()
+                # selecionar um poder aleatório
+                random_power = random.randint(1, len(powers) - 1)
+                # se o poder for "strength", dar a ele um tempo de 999 segundos, caso o contrário um tempo de 5 a 12 segundos
+                time = 999.0 if random_power == powers.index("strength") else random.uniform(5.0, 12.0) 
+                # aplicar o poder ao jogador
+                players[ self.collision_info[1] - 1 ].active_power = [ random_power, time, time ]
+                # destruir a powerbox
+                power_box.destruct = True
+                break
+
     def player_collision(self, player):
         global simulated
-        dx = abs(self.origin.x - player.origin.x) if player.id == 2 else abs(self.origin.x - (player.origin.x + player.width))
-
-        if dx**2 <= self.radius**2 and self.origin.y + self.radius > player.origin.y and self.origin.y - self.radius < player.origin.y + player.height:
-            self.color = (255, 0, 0)
-            #hit_height = self.origin.y - player.origin.y
-            #paddle_mid = player.height / 2.0
-            self.collision_scalars = Vector2D(random.uniform(1, 1.3), random.uniform(0.7, 1.5))
-            self.velocity.x *= -self.collision_scalars.x
-            self.velocity.y *= self.collision_scalars.y
-            simulated.apply_simulated_data([self.origin, self.velocity, self.theta, self.time_elapsed, self.collision_scalars, self.state])
-        else:
-            delta_origin = Vector2D(self.origin.x - self.previous_origin.x, self.origin.y - self.previous_origin.y)
-            if delta_origin.length() < self.radius**2:
-                return
-
-            simulation_step = delta_origin / 10
-            for i in range(10):
-                simulated_origin = self.previous_origin + (simulation_step * i)
-                if self.did_collide(simulated_origin, player):
-                    self.color = (255, 0, 0)
-                    #hit_height = self.origin.y - player.origin.y
-                    #paddle_mid = player.height / 2.0
-                    self.origin = copy(self.previous_origin)
-                    self.collision_scalars = Vector2D(random.uniform(1, 1.3), random.uniform(0.7, 1.5))
-                    self.velocity.x *= -self.collision_scalars.x
-                    self.velocity.y *= self.collision_scalars.y
-                    simulated.apply_simulated_data([self.origin, self.velocity, self.theta, self.time_elapsed, self.collision_scalars, self.state])
-                    break
-
-    def did_collide(self, origin, player):
-        dx = abs(origin.x - player.origin.x) if player.id == 2 else abs(origin.x - (player.origin.x + player.width))
         
-        if dx**2 <= self.radius**2 and origin.y + self.radius > player.origin.y and origin.y - self.radius < player.origin.y + player.height:
-            return True
+        if game_state == STATE_ROUND_START:
+            return
 
+        # se a bola não estiver vindo na direção do jogador, não há porque verificar se a mesma irá colidir com ele
+        if player.id == 1 and self.velocity.x > 0 or player.id == 2 and self.velocity.x < 0:
+            return
+
+        # adquirir os dados da colisão
+        collision_data = self.did_collide(player)
+
+        # verificar se houve colisão
+        if collision_data[0] == True:
+            # reproduzir som de "hit"
+            sound_hit.play()
+            #self.color = (255, 0, 0)
+                
+            # quando houver colisão com o jogador, teletransportar a bola para o ponto de colisão, levando em consideração o seu raio
+            if player.id == 1:
+                self.origin = Vector2D(collision_data[1][0] + self.radius, collision_data[1][1])
+            else:
+                self.origin = Vector2D(collision_data[1][0] - self.radius, collision_data[1][1])
+
+            # resetamos o histórico de origens da bola assim que houver a colisão, para prevenção de problemas de detecção de colisão momentos após 
+            self.previous_origin = copy(self.origin)
+            self.backup_origin = copy(self.origin)
+
+            # determinanos um valor de 0 à metade da altura do paddle, este valor representa a distancia do meio do paddle em que a bola atingiu e é utilizado para escalar a velocidade pós impacto
+            hit_height = self.origin.y - player.origin.y
+            paddle_mid = player.height * 0.5
+            hit_delta = min(paddle_mid, abs(hit_height - paddle_mid))
+
+            #collision_angle = math.atan2(self.velocity.x, self.velocity.y) * 180/math.pi
+
+            # definimos os valores de escala para a velocidade pós impacto
+            self.collision_scalars = Vector2D(-1.0, 1.0) + (Vector2D(-0.4, 0.2) / paddle_mid * hit_delta)
+
+            # aplicamos o poder, caso haja, nessa colisão
+            self.apply_power(player)
+
+            # aplicamos os valores de escala
+            self.velocity *= self.collision_scalars
+
+            # permitir que o jogador volte a simular colisões
+            player.can_predict_collision = True
+        
+            # reiniciamos a simulação da bola com os novos valores
+            simulated.apply_simulated_data([self.origin, self.velocity, self.theta, self.time_elapsed, self.collision_scalars, self.state])
+
+    def test_collision(self, player, origin, previous_origin):
+        collision_data = None
+
+        # teste de intersecção entre 2 segmentos finitos
+
+        if(player.id == 1):
+            collision_data = geometry.calculateIntersectPoint((origin.x, origin.y), (previous_origin.x, previous_origin.y), (player.origin.x + player.width, player.origin.y), (player.origin.x + player.width, player.origin.y + player.height))
+            #pygame.draw.line(window, (0, 255, 0), (player.origin.x + player.width, player.origin.y), (player.origin.x + player.width, player.origin.y + player.height))
+        else:
+            collision_data = geometry.calculateIntersectPoint((origin.x, origin.y), (previous_origin.x, previous_origin.y), (player.origin.x, player.origin.y), (player.origin.x, player.origin.y + player.height))
+            #pygame.draw.line(window, (255, 0, 0), (player.origin.x-1, player.origin.y), (player.origin.x-1, player.origin.y + player.height))
+
+        #pygame.draw.line(window, (0, 255, 0), (origin.x, origin.y), (previous_origin.x, previous_origin.y))
+
+        if collision_data != None:
+            return (True, collision_data)
+
+        return (False, collision_data)
+
+    def did_collide(self, player):
+        extrapolated_origin = self.origin + self.velocity
+        collision_data = self.test_collision(player, extrapolated_origin, self.backup_origin)
+        # segmento entre última origem registrada e posição extrapolada entre 1 ou 2 frames, dependendo da necessidade
+        return collision_data if collision_data[0] == True else self.test_collision(player, extrapolated_origin + self.velocity, self.backup_origin)
+
+    def is_launch_acceptable(self, angle):
+        # verificamos se o angulo em que a bola será lançada é adequado
+        angle = abs(angle - (math.floor((angle + 180)/360))*360)
+        if abs(90 - angle) > 45 and abs(180 - angle) > 45:
+            return True
         return False
 
     def reset_velocity(self):
-        while self.theta % 90 != 0:
-            self.theta = random.randint(0, 360)
-        self.velocity = Vector2D(self.speed * math.cos(self.theta), -self.speed * math.sin(self.theta))
+        self.theta = 90
+        self.origin_history.clear()
+        self.previous_origin = copy(self.origin)
+        self.backup_origin = copy(self.origin)
+        # lançamos a bola em uma direção aleatória, que se encaixa dentro de um intervalo específico
+        while self.is_launch_acceptable(self.theta) == False:
+            self.theta = random.randint(11, 45)
+
+        self.velocity = Vector2D(self.speed * math.cos(self.theta * 180/math.pi), -self.speed * math.sin(self.theta* 180/math.pi))
 
     def handle_collisions(self):
-        global players, game_state
+        global players, game_state, world, menu
 
         for player in players:
             self.player_collision(player)
 
+        for power_box in world.power_boxes:
+            self.power_box_collision(power_box)
+
+        # verificar se a bola passou da borda direita           
         if self.origin.x + self.radius > WIDTH:
+            # pontuar e se necessário ir para a "endscreen"
+            # reiniciar o round
+            sound_score.play()
             players[0].score += 1
             self.velocity = Vector2D(0, 0)
-            game_state = STATE_ROUND_START
+            if players[0].score >= game_score_win_condition:
+                menu.window = menu.windows.index("endscreen")
+            else:
+                game_state = STATE_ROUND_START
         elif self.origin.x - self.radius < 0:
+            sound_score.play()
             players[1].score += 1
             self.velocity = Vector2D(0, 0)
-            game_state = STATE_ROUND_START
+            if players[1].score >= game_score_win_condition:
+                menu.window = menu.windows.index("endscreen")
+            else:
+                game_state = STATE_ROUND_START
 
+        # verificar se houve colisão com as bordas
         if self.origin.y - self.radius <= 30 or self.origin.y + self.radius >= HEIGHT - 30:
+            # reproduzir o som "hit" e lançar a bola no eixo y em sentido oposto
+            # aplicar aumento de velocidade gradual
+            sound_hit.play()
             if self.origin.y - self.radius <= 30:
                 self.origin.y = 30 + self.radius
             else:
                 self.origin.y = HEIGHT - self.radius - 30
+
+            for player in players:
+                # permitir que o jogador volte a simular colisões
+                player.can_predict_collision = True
 
             self.velocity.x *= 1 + (self.time_elapsed/(10**5))
             self.velocity.y *= -(1 + (self.time_elapsed/(10**5)))
@@ -740,7 +952,12 @@ class Ball:
     def apply_velocity(self):
         self.origin.x += self.velocity.x * (1/(frametime/1000) * 1/framerate)
         self.origin.y += self.velocity.y * (1/(frametime/1000) * 1/framerate)
+        
+        # caso o poder atual registrado na bola seja "strength", não limitamos a sua velocidade
+        if self.collision_info[0] == "strength":
+            return
 
+        # limitar velocidade
         if abs(self.velocity.x) > ball_max_horizontal_speed:
             self.velocity.x = -ball_max_horizontal_speed if self.velocity.x < 0 else ball_max_horizontal_speed
         if abs(self.velocity.y) > ball_max_vertical_speed:
@@ -752,13 +969,19 @@ class Ball:
         self.apply_velocity()
         self.handle_collisions()
 
-        self.time_elapsed += 0.1 * (1/(frametime/1000) * 1/framerate)
+        self.time_elapsed += 0.1
+        self.backup_origin = copy(self.previous_origin)
         self.previous_origin = copy(self.origin)
-        #simulated.quick_apply_simulated_data([self.origin, self.velocity, self.theta, self.time_elapsed, self.collision_scalars, self.state])
+
+        self.origin_history.append(copy(self.origin))
+        if len(self.origin_history) >= 15:
+            self.origin_history.pop(0)
 
     def frame_render(self):
         global window
 
+        # renderizar o poder e, após, a bola
+        self.render_power()
         pygame.draw.circle(window, self.color, (self.origin.x, self.origin.y), self.radius)
 
 class SimulatedBall:
@@ -942,52 +1165,4 @@ def frame_render():
 while game_state != STATE_QUIT:
     # jogo / definir framerate, atualizar frametime
     frametime = clock.tick(framerate)
-    #print("framerate: {0} | tempo desde o último frame: {1}ms (estável em {2}ms)".format(int(1/(frametime/1000)), frametime/1000.0, 1.0/framerate))
-
-    # background preto
-    window.fill( (0,0,0) )
-
-    # jogo / diferenciação de estados
-    if game_state == STATE_MENU:
-        # resetar o estado do mouse antes de passar pelo buffer de eventos nesse frame
-        mouse_state = [False, False, False]
-
-        for event in pygame.event.get():
-        # jogo / buffer de eventos
-            if event.type == pygame.MOUSEMOTION:
-                mouse_state[0] = True
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                mouse_state[1] = True
-            elif event.type == pygame.MOUSEBUTTONUP:
-                mouse_state[2] = True
-            if event.type == pygame.QUIT:
-                # caso o cliente tente fechar o aplicativo, executar a sequencia abaixo
-                print("pygame.QUIT")
-                game_state = STATE_QUIT
-                break
-
-        world.frame_think()
-        world.frame_render()
-        menu.window_handler(retro_font)
-    elif game_state == STATE_PLAYING or game_state == STATE_ROUND_START:
-        # execução de estágios do frame
-        if game_state == STATE_ROUND_START:
-            world.should_update = True
-            ball.reset_velocity()
-            ball.origin = Vector2D(WIDTH/2, HEIGHT/2)
-            ball.state = ball.states.index("frozen")
-            time.sleep(1)
-            ball.state = ball.states.index("active")
-            simulated.apply_simulated_data([ball.origin, ball.velocity, ball.theta, ball.time_elapsed, ball.collision_scalars, ball.state])
-            game_state = STATE_PLAYING
-
-
-        frame_think()
-        frame_render()
-    else:
-        pass
-
-    pygame.display.update()
-    framecount += 1
-
-pygame.quit()
+    #print("framerate: {0} | tempo desde o último frame: {1}ms (estáv
