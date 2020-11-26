@@ -453,11 +453,6 @@ class PowerBox:
         global window, retro_font
 
         pygame.draw.rect(window, (255, 255, 255), (self.origin.x, self.origin.y, self.size, self.size))
-        #pygame.draw.line(window, (255, 0, 0), (self.origin.x, self.origin.y), (self.origin.x, self.origin.y + self.size))
-        #pygame.draw.line(window, (255, 0, 0), (self.origin.x, self.origin.y), (self.origin.x + self.size, self.origin.y))
-        #pygame.draw.line(window, (255, 0, 0), (self.origin.x + self.size, self.origin.y), (self.origin.x + self.size, self.origin.y + self.size))
-        #pygame.draw.line(window, (255, 0, 0), (self.origin.x, self.origin.y + self.size), (self.origin.x + self.size, self.origin.y + self.size))
-
         retro_font.draw_words("?", self.origin.x + self.size*0.5, self.origin.y + self.size*0.5, 40, (0, 0, 0))
 
 class World:
@@ -699,6 +694,7 @@ class Player:
 
     def frame_think(self):
         global players
+
         if game_state != STATE_PLAYING and game_state != STATE_ROUND_START:
             return
 
@@ -709,14 +705,6 @@ class Player:
     def frame_render(self):
         if game_state != STATE_PLAYING and game_state != STATE_ROUND_START:
             return        
-
-        # representando hitboxes
-        #if self.id == 1:
-        #    pygame.draw.rect(window, (255, 0, 0), (self.origin.x + self.width, self.origin.y - 5, 5, 5)) # vermelho, origem x + width, origem y
-        #    pygame.draw.rect(window, (0, 0, 255), (self.origin.x + self.width, self.origin.y + self.height, 5, 5)) # azul, origem x + width, origem y + height 
-        #else:
-        #    pygame.draw.rect(window, (255, 0, 0), (self.origin.x - 5, self.origin.y - 5, 5, 5)) # vermelho, origem x, origem y
-        #    pygame.draw.rect(window, (0, 0, 255), (self.origin.x - 5, self.origin.y + self.height, 5, 5)) # azul, origem x, origem y + height
 
         # desenhar o objeto
         pygame.draw.rect( window, (255, 255, 255), (self.origin.x, self.origin.y, self.width, self.height) )
@@ -825,7 +813,6 @@ class Ball:
         if collision_data[0] == True:
             # reproduzir som de "hit"
             sound_hit.play()
-            #self.color = (255, 0, 0)
                 
             # quando houver colisão com o jogador, teletransportar a bola para o ponto de colisão, levando em consideração o seu raio
             if player.id == 1:
@@ -841,8 +828,6 @@ class Ball:
             hit_height = self.origin.y - player.origin.y
             paddle_mid = player.height * 0.5
             hit_delta = min(paddle_mid, abs(hit_height - paddle_mid))
-
-            #collision_angle = math.atan2(self.velocity.x, self.velocity.y) * 180/math.pi
 
             # definimos os valores de escala para a velocidade pós impacto
             self.collision_scalars = Vector2D(-1.0, 1.0) + (Vector2D(-0.4, 0.2) / paddle_mid * hit_delta)
@@ -866,12 +851,8 @@ class Ball:
 
         if(player.id == 1):
             collision_data = geometry.calculateIntersectPoint((origin.x, origin.y), (previous_origin.x, previous_origin.y), (player.origin.x + player.width, player.origin.y), (player.origin.x + player.width, player.origin.y + player.height))
-            #pygame.draw.line(window, (0, 255, 0), (player.origin.x + player.width, player.origin.y), (player.origin.x + player.width, player.origin.y + player.height))
         else:
             collision_data = geometry.calculateIntersectPoint((origin.x, origin.y), (previous_origin.x, previous_origin.y), (player.origin.x, player.origin.y), (player.origin.x, player.origin.y + player.height))
-            #pygame.draw.line(window, (255, 0, 0), (player.origin.x-1, player.origin.y), (player.origin.x-1, player.origin.y + player.height))
-
-        #pygame.draw.line(window, (0, 255, 0), (origin.x, origin.y), (previous_origin.x, previous_origin.y))
 
         if collision_data != None:
             return (True, collision_data)
@@ -990,9 +971,10 @@ class SimulatedBall:
         self.state = 1
         self.origin = Vector2D(WIDTH/2, HEIGHT/2)
         self.previous_origin = Vector2D(0, 0)
+        self.backup_origin = Vector2D(0, 0)
         self.velocity = Vector2D(0, 0)
         self.time_elapsed = 0.0
-        self.speed = 5
+        self.speed = ball_launch_speed
         self.radius = 10
         self.theta = random.randint(0, 360)
         self.reset_velocity()
@@ -1000,33 +982,55 @@ class SimulatedBall:
         self.color = (255, 0, 0, 80)
         self.simulated_origins = []
 
+        # utilizadas para registrar quando a bola simulada atravessa a coordenada X dos jogadores
+        self.left_hits = []
+        self.right_hits = []
+
     def player_collision(self, player):
-        dx = abs(self.origin.x - player.origin.x) if player.id == 2 else abs(self.origin.x - (player.origin.x + player.width))
+        if game_state == STATE_ROUND_START:
+            return
 
-        if dx**2 <= self.radius**2 and self.origin.y + self.radius > player.origin.y and self.origin.y - self.radius < player.origin.y + player.height:
-            self.velocity.x *= -self.collision_scalars.x
-            self.velocity.y *= self.collision_scalars.y
+        collision_data = self.did_collide(player)
+
+        if collision_data[0] == True:
+            # quando houver colisão com o jogador, teletransportar a bola para o ponto de colisão, levando em consideração o seu raio
+            if player.id == 1:
+                self.origin = Vector2D(collision_data[1][0] + self.radius, collision_data[1][1])
+            else:
+                self.origin = Vector2D(collision_data[1][0] - self.radius, collision_data[1][1])
+
+            # resetamos o histórico de origens da bola assim que houver a colisão, para prevenção de problemas de detecção de colisão momentos após 
+            self.previous_origin = copy(self.origin)
+            self.backup_origin = copy(self.origin)
+
+            # determinanos um valor de 0 à metade da altura do paddle, este valor representa a distancia do meio do paddle em que a bola atingiu e é utilizado para escalar a velocidade pós impacto
+            hit_height = self.origin.y - player.origin.y
+            paddle_mid = player.height * 0.5
+            hit_delta = min(paddle_mid, abs(hit_height - paddle_mid))
+
+            # definimos os valores de escala para a velocidade pós impacto
+            self.collision_scalars = Vector2D(-1.0, 1.0) + (Vector2D(-0.4, 0.2) / paddle_mid * hit_delta)
+
+            # aplicamos os valores de escala
+            self.velocity *= self.collision_scalars
+
+    def test_collision(self, player, origin, previous_origin):
+        collision_data = None
+
+        if(player.id == 1):
+            collision_data = geometry.calculateIntersectPoint((origin.x, origin.y), (previous_origin.x, previous_origin.y), (player.origin.x + player.width, player.origin.y), (player.origin.x + player.width, player.origin.y + player.height))
         else:
-            delta_origin = self.origin - self.previous_origin
-            if delta_origin.length() < self.radius**2:
-                return
+            collision_data = geometry.calculateIntersectPoint((origin.x, origin.y), (previous_origin.x, previous_origin.y), (player.origin.x, player.origin.y), (player.origin.x, player.origin.y + player.height))
 
-            simulation_step = delta_origin / 3
-            for i in range(3):
-                simulated_origin = self.previous_origin + (simulation_step * i)
-                if self.did_collide(simulated_origin, player):
-                    self.origin = copy(self.previous_origin)
-                    self.velocity.x *= -self.collision_scalars.x
-                    self.velocity.y *= self.collision_scalars.y
-                    break
+        if collision_data != None:
+            return (True, collision_data)
 
-    def did_collide(self, origin, player):
-        dx = abs(origin.x - player.origin.x) if player.id == 2 else abs(origin.x - (player.origin.x + player.width))
-        
-        if dx**2 <= self.radius**2 and origin.y + self.radius > player.origin.y and origin.y - self.radius < player.origin.y + player.height:
-            return True
+        return (False, collision_data)
 
-        return False
+    def did_collide(self, player):
+        extrapolated_origin = self.origin + self.velocity
+        collision_data = self.test_collision(player, extrapolated_origin, self.backup_origin)
+        return collision_data if collision_data[0] == True else self.test_collision(player, extrapolated_origin + self.velocity, self.backup_origin)
 
     def reset_velocity(self):
         self.theta = random.randint(0, 360)
@@ -1038,6 +1042,12 @@ class SimulatedBall:
         for player in players:
             self.player_collision(player)
 
+        if self.origin.x + self.radius >= WIDTH - 65:
+            self.right_hits.append(Vector2D(WIDTH - 60, self.origin.y))
+        elif self.origin.x - self.radius <= 65:
+            self.left_hits.append(Vector2D(60, self.origin.y))
+
+        # caso a bola atravesse a borda direita/esquerda, finalizar a simulação
         if self.origin.x + self.radius > WIDTH:
             self.velocity = Vector2D(0, 0)
             self.state = self.states.index("frozen")
@@ -1062,6 +1072,8 @@ class SimulatedBall:
         self.collision_scalars = copy(data[4])
         self.state = copy(data[5])
         self.simulated_origins = []
+        self.left_hits = []
+        self.right_hits = []
 
     def quick_apply_simulated_data(self, data):
         self.origin = copy(data[0])
@@ -1071,24 +1083,21 @@ class SimulatedBall:
         self.collision_scalars = copy(data[4])
 
     def apply_velocity(self):
-        self.origin.x += self.velocity.x * (1/(frametime/1000) * 1/framerate)
-        self.origin.y += self.velocity.y * (1/(frametime/1000) * 1/framerate)
-
-        if abs(self.velocity.x) > 18:
-            self.velocity.x += -1 if self.velocity.x > 0 else 1
-        if abs(self.velocity.y) > 43:
-            self.velocity.y = -43 if self.velocity.y < 0 else 43
+        # fazer com que a simulação viaje em uma velocidade substancialmente maior para uma melhora em performance
+        self.origin.x += (self.velocity.x * 25) * (1/(frametime/1000) * 1/framerate)
+        self.origin.y += (self.velocity.y * 25) * (1/(frametime/1000) * 1/framerate)
 
     def frame_think(self):
         prediction_time = 0.0
-        # check if the ball state is "frozen" during this simulation or if we predict for more than 15 seconds
-        while self.state != self.states.index("frozen") and prediction_time <= 10.0:
+        # verificar o estado da bola, se o estado não for 'frozen' limitar o tempo de simulação para 6 segundos à fim de otimizar a simulação
+        while self.state != self.states.index("frozen") and prediction_time <= 6.0:
             self.apply_velocity()
             self.handle_collisions()
 
             self.time_elapsed += 0.1 * (1/(frametime/1000) * 1/framerate)
             prediction_time += frametime/1000
-            self.simulated_origins.append([copy(self.origin), self.time_elapsed])
+            self.simulated_origins.append([copy(self.origin), copy(self.time_elapsed), copy(self.velocity)])
+            self.backup_origin = copy(self.previous_origin)
             self.previous_origin = copy(self.origin)
 
     def frame_render(self):
@@ -1096,6 +1105,7 @@ class SimulatedBall:
 
         pending_deletion = []
 
+        # deletamos os dados da simulação pelos quais a bola já passou
         for idx in range(len(self.simulated_origins)):
             origin = self.simulated_origins[idx][0]
             self.color = (255/len(self.simulated_origins) * idx, 0, 0)
@@ -1104,8 +1114,8 @@ class SimulatedBall:
                 pending_deletion.append(idx)
 
         for idx in pending_deletion:
-            self.simulated_origins.pop(idx)
-
+            if len(self.simulated_origins) > idx:
+                self.simulated_origins.pop(idx)
 
 # init / instanciando classes
 world = World()
@@ -1117,52 +1127,143 @@ retro_font = RetroFont()
 
 def frame_think():
     global game_state, players, mouse_state
-
-    # resetar o estado do mouse antes de passar pelo buffer de eventos nesse frame
-    mouse_state = [False, False, False]
-
-    for event in pygame.event.get():
-    # jogo / buffer de eventos
-        if event.type == pygame.MOUSEMOTION:
-            mouse_state[0] = True
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            mouse_state[1] = True
-        elif event.type == pygame.MOUSEBUTTONUP:
-            mouse_state[2] = True
-
-        if event.type == pygame.KEYDOWN or event.type == pygame.KEYUP:
-            for player in players:
-                # atualizar as teclas pressionadas para cada jogador
-                player.update_keys(event.key, event.type == pygame.KEYDOWN)
-
-        if event.type == pygame.QUIT:
-            # caso o cliente tente fechar o aplicativo, executar a sequencia abaixo
-            print("pygame.QUIT")
-            game_state = STATE_QUIT
-            break
+    if menu.window != menu.windows.index("none"):
+        return
 
     for player in players:
         # executar estágio de 'think' para cada jogador
         player.frame_think()
 
+    # executar estágio de 'think' da bola
     ball.frame_think()
-    #if framecount % 3 == 0:
+
+    # a cada 5 frames, refazer a simulação (caso existam novas colisões ou mudanças no trajeto que não foram consideradas antes)
+    if framecount % 5 == 0:
+        simulated.apply_simulated_data([ball.origin, ball.velocity, ball.theta, ball.time_elapsed, ball.collision_scalars, ball.state])
+    
+    # simular
     simulated.frame_think()
+    
+    # estágio de 'think' do mundo (caso queiramos adicionar obstáculos ou elementos diferentes)
     world.frame_think()
 
 def frame_render():
     global players
 
+    # renderizar o mundo primeiro
     world.frame_render()
+    world.round_pre_start(retro_font, -1)
     
     for player in players:
         # executar estágio de 'render' para cada jogador
         player.frame_render()
 
-    simulated.frame_render()
+    # executar estágio de 'render' da bola
     ball.frame_render()    
+
+def event_buffer():
+    global game_state, mouse_state
+
+    if game_state == STATE_MENU:
+        # resetar o estado do mouse antes de passar pelo buffer de eventos nesse frame
+        mouse_state = [False, False, False]
+
+        for event in pygame.event.get():
+        # jogo / buffer de eventos
+            if event.type == pygame.MOUSEMOTION:
+                mouse_state[0] = True
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                mouse_state[1] = True
+            elif event.type == pygame.MOUSEBUTTONUP:
+                mouse_state[2] = True
+            if event.type == pygame.QUIT:
+                # caso o cliente tente fechar o aplicativo, executar a sequencia abaixo
+                print("pygame.QUIT")
+                game_state = STATE_QUIT
+                break
+    else:
+        # resetar o estado do mouse antes de passar pelo buffer de eventos nesse frame
+        mouse_state = [False, False, False]
+
+        for event in pygame.event.get():
+        # jogo / buffer de eventos
+            if event.type == pygame.MOUSEMOTION:
+                mouse_state[0] = True
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                mouse_state[1] = True
+            elif event.type == pygame.MOUSEBUTTONUP:
+                mouse_state[2] = True
+
+            if event.type == pygame.KEYDOWN or event.type == pygame.KEYUP:
+                for player in players:
+                    # atualizar as teclas pressionadas para cada jogador
+                    player.update_keys(event.key, event.type == pygame.KEYDOWN)
+
+                if event.type == pygame.KEYUP:
+                    if event.key == pygame.K_ESCAPE:
+                        menu.window = menu.windows.index("in_game")
+
+            if event.type == pygame.QUIT:
+                # caso o cliente tente fechar o aplicativo, executar a sequencia abaixo
+                print("pygame.QUIT")
+                game_state = STATE_QUIT
+                break
+
+def pre_round_start():
+    global game_state, ball
+
+    # verificar se estamos no estado de jogo correto
+    if game_state != STATE_ROUND_START:
+        return
+    
+    for player in players:
+        # autorizar a simulação de colisão para os jogadores
+        player.can_predict_collision = True
+
+    world.should_update = True
+    world.round_pre_start(retro_font, 5.0)
+
+    # reinstanciar a bola    
+    ball = Ball()
+    ball.state = ball.states.index("frozen")
+    
+    # freezetime de 1 segundo
+    time.sleep(1)
+    
+    ball.state = ball.states.index("active")
+
+    # atualizar os dados da simulação com os reais
+    simulated.apply_simulated_data([ball.origin, ball.velocity, ball.theta, ball.time_elapsed, ball.collision_scalars, ball.state])
+    
+    # atualizar o estado de jogo
+    game_state = STATE_PLAYING
 
 while game_state != STATE_QUIT:
     # jogo / definir framerate, atualizar frametime
     frametime = clock.tick(framerate)
-    #print("framerate: {0} | tempo desde o último frame: {1}ms (estáv
+
+    # background preto
+    window.fill( (0,0,0) )
+
+    event_buffer()
+
+    # jogo / diferenciação de estados
+    if game_state == STATE_MENU:
+        world.frame_think()
+        world.frame_render()
+        menu.window_handler(retro_font)
+    elif game_state == STATE_PLAYING or game_state == STATE_ROUND_START:
+        # execução de estágios do frame
+        pre_round_start()
+
+        frame_think()
+        frame_render()
+
+        menu.window_handler(retro_font)
+    else:
+        pass
+
+    pygame.display.update()
+    framecount += 1
+
+pygame.quit()
