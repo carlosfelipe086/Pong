@@ -1,9 +1,9 @@
 # Pong
 ## Engenharia da Computação - 1A
 ## Integrantes:
-### Carlos Inacio
-### Carlos Felipe
-### Keiya Nishio
+### Carlos Inacio - cinaacio/carlosinaacio
+### Carlos Felipe - carlosfelipe086
+### Keiya Nishio - keiyanishio
 
 
 
